@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+
+id = "rig_renamer"
+version = "1.1.0"
+name = "Rig Renamer"
+tagline = "Toggle bone names with alias custom properties"
+maintainer = "Daniel Sör <Ragath@users.noreply.github.com>"
+type = "add-on"
+tags = ["Animation"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:MIT",
+]
+copyright = [
+  "2025 Daniel Sör",
+]

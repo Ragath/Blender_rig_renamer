@@ -10,13 +10,31 @@ Toggle bone names with an alias stored in the `alias` custom property. Useful fo
 
 ## Installation
 
+### Blender 4.2+ (as an Extension, recommended)
+
+1. Download the repository as a `.zip` (GitHub: `Code > Download ZIP`),
+   or run `blender -c extension build` inside the cloned repository to
+   build a versioned extension `.zip`.
+2. In Blender, go to `Edit > Preferences > Get Extensions`.
+3. Click the `▼` menu in the top right and choose `Install from Disk...`,
+   then select the `.zip` file.
+4. Enable the extension.
+
+Do NOT add the GitHub URL via `Add Remote Repository` — a git host is not
+an extension server, and Blender will report `invalid manifest (Expected a
+"version" key which was not found)`. Remote repositories must serve an
+extension listing, not a repository page.
+
+### Legacy (Blender 4.0–4.1, or single-file install)
+
 1. Clone the repository:
    ```bash
    git clone https://github.com/Ragath/Blender-rig_renamer.git
    ```
 2. Open Blender and navigate to `Edit > Preferences > Add-ons`.
 
-3. Click on `Install...` and select the `rig_renamer.py` file from the cloned repository.
+3. Click on `Install from Disk...` / `Install...` and select the
+   `__init__.py` file from the cloned repository.
 
 4. Enable the addon by checking the box next to "Rig Renamer."
 
@@ -28,7 +46,8 @@ Toggle bone names with an alias stored in the `alias` custom property. Useful fo
 
 ## Compatibility
 
-- Blender version: 4.0.0 or higher.
+- Blender 4.2 or higher as an Extension (`blender_manifest.toml`).
+- Blender 4.0–4.1 as a legacy add-on (`bl_info` in `__init__.py`).
 
 ## Contributing
 
