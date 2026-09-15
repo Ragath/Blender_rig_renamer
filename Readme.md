@@ -5,12 +5,18 @@ Toggle bone names with an alias stored in the `alias` custom property. Useful fo
 ## Features
 
 - Toggle bone names with their `alias` custom property (all bones or selected only).
-- Generate `alias` values from bone names containing Left/Right (`Name` -> `Name.L` / `Name.R`).
+  Each alias must be unique per armature; toggle refuses duplicates instead
+  of silently scrambling names.
+- Generate `alias` values from bone names containing Left/Right (`HandLeft` -> `Hand.L` / `Hand_Right` -> `Hand.R`).
 - Set or clear the `alias` custom property on all or selected bones.
+  The alias is stored on both the pose bone and the armature bone so it is
+  visible in the Bone tab's Custom Properties in both Pose Mode and Object Mode.
+- Works in Object, Pose and Edit Mode. The sidebar panel also lists all
+  stored aliases, so they are visible in every mode.
 
 ## Installation
 
-### Blender 4.2+ (as an Extension, recommended)
+### Blender 5.0+ (as an Extension, recommended)
 
 1. Download the repository as a `.zip` (GitHub: `Code > Download ZIP`),
    or run `blender -c extension build` inside the cloned repository to
@@ -25,11 +31,11 @@ an extension server, and Blender will report `invalid manifest (Expected a
 "version" key which was not found)`. Remote repositories must serve an
 extension listing, not a repository page.
 
-### Legacy (Blender 4.0–4.1, or single-file install)
+### Legacy (single-file install)
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/Ragath/Blender-rig_renamer.git
+   git clone https://github.com/Ragath/Blender_rig_renamer.git
    ```
 2. Open Blender and navigate to `Edit > Preferences > Add-ons`.
 
@@ -46,8 +52,8 @@ extension listing, not a repository page.
 
 ## Compatibility
 
-- Blender 4.2 or higher as an Extension (`blender_manifest.toml`).
-- Blender 4.0–4.1 as a legacy add-on (`bl_info` in `__init__.py`).
+- Blender 5.0 or higher (Extension `blender_manifest.toml` and `bl_info`).
+- Versions 1.1.0 and earlier supported Blender 4.x.
 
 ## Contributing
 
