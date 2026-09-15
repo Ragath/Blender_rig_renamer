@@ -1,7 +1,7 @@
 bl_info = {
     "name": "Rig Renamer",
     "author": "Daniel Sör",
-    "version": (1, 1, 5),
+    "version": (1, 1, 7),
     "blender": (5, 0, 0),
     "location": "View3D > Sidebar > Rig Renamer, Pose Mode Context Menu",
     "description": "Toggle bone names with an alias stored in the 'alias' custom property",
@@ -63,14 +63,22 @@ def clean_alias(value):
     return value.strip()
 
 
-def get_bone_alias(pose_bone, data_bone=None):
+def get_bone_alias(pose_bone, data_bone=None, prefer_data=False):
     """Return the effective alias for a bone.
 
-    The PoseBone property is the source of truth; the data-Bone property
-    is a fallback mirror. Both are kept because Blender's Bone tab shows
-    the PoseBone's custom properties in Pose Mode but the data-Bone's
-    everywhere else (e.g. Object Mode) -- see ``BONE_PT_custom_props``.
+    The PoseBone property is the source of truth in Pose Mode; the
+    data-Bone property everywhere else (the Bone tab shows the
+    data-Bone's custom properties outside Pose Mode, and the edit
+    bone shares the data-Bone's storage) -- see ``BONE_PT_custom_props``.
+    The other side is a fallback so pre-1.1.3 one-sided aliases keep
+    working until an operator rewrites both mirrors.
     """
+    if prefer_data:
+        if data_bone is not None and ALIAS_PROP in data_bone:
+            return clean_alias(data_bone[ALIAS_PROP])
+        if ALIAS_PROP in pose_bone:
+            return clean_alias(pose_bone[ALIAS_PROP])
+        return ""
     if ALIAS_PROP in pose_bone:
         return clean_alias(pose_bone[ALIAS_PROP])
     if data_bone is not None and ALIAS_PROP in data_bone:
@@ -219,6 +227,56 @@ def build_lr_alias(bone_name):
     return alias
 
 
+def replace_side_word(text, old, new):
+    """Replace ``old`` with ``new`` (e.g. "left"->"right"), case-insensitive.
+
+    The case of each occurrence is preserved: "LEFT"->"RIGHT",
+    "Left"->"Right", "left"->"right".
+    """
+    def _repl(match):
+        word = match.group(0)
+        if word.isupper():
+            return new.upper()
+        if word[0].isupper() and word[1:].islower():
+            return new.capitalize()
+        if word.islower():
+            return new
+        return new
+
+    return re.sub(old, _repl, text, flags=re.IGNORECASE)
+
+
+def fix_alias_side(bone_name, alias):
+    """Fix a Left/Right conflict between bone name and alias.
+
+    When the bone name ends in ``.L``/``.R`` but the alias contains the
+    opposite word (``Right``/``Left``), return the alias with the word
+    replaced. Returns "" when there is nothing to fix.
+    """
+    if not isinstance(bone_name, str) or not isinstance(alias, str):
+        return ""
+    if bone_name.endswith(".L"):
+        side = "L"
+    elif bone_name.endswith(".R"):
+        side = "R"
+    else:
+        return ""
+    lowered = alias.lower()
+    has_left = "left" in lowered
+    has_right = "right" in lowered
+    if has_left == has_right:
+        return ""
+    if side == "L" and has_right:
+        fixed = replace_side_word(alias, "right", "left")
+    elif side == "R" and has_left:
+        fixed = replace_side_word(alias, "left", "right")
+    else:
+        return ""
+    if not fixed or fixed == alias:
+        return ""
+    return fixed
+
+
 class RIGRENAMER_OT_toggle_bone_alias(bpy.types.Operator):
     """Swap bone names with their 'alias' custom property"""
 
@@ -250,18 +308,24 @@ class RIGRENAMER_OT_toggle_bone_alias(bpy.types.Operator):
         # keeping the Edit-Mode selection as plain names.
         prev_mode, edit_names = begin_object_work(arm_obj, context)
         try:
-            return self._execute_in_object_mode(context, arm_obj, edit_names)
+            return self._execute_in_object_mode(
+                context, arm_obj, edit_names, prefer_data=prev_mode != "POSE"
+            )
         finally:
             end_object_work(arm_obj, context, prev_mode)
 
-    def _execute_in_object_mode(self, context, arm_obj, edit_names):
+    def _execute_in_object_mode(
+        self, context, arm_obj, edit_names, prefer_data=False
+    ):
         # Collect swap candidates: [(current_name, alias)]
         # (Names as strings, looked up fresh later, so renames can't
         # desync the loop from the bones.)
         data_bones = arm_obj.data.bones
         candidates = []
         for pb in iter_work_bones(arm_obj, self.selected_only, edit_names):
-            alias = get_bone_alias(pb, data_bones.get(pb.name))
+            alias = get_bone_alias(
+                pb, data_bones.get(pb.name), prefer_data=prefer_data
+            )
             if not alias:
                 continue
             if alias == pb.name:
@@ -518,6 +582,63 @@ class RIGRENAMER_OT_generate_lr_aliases(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class RIGRENAMER_OT_fix_alias_side(bpy.types.Operator):
+    """Replace a conflicting Left/Right word in the alias.
+
+    Uses the bone's .L/.R suffix as the source of truth, e.g. bone
+    "Hand.R" with alias "HandLeft" becomes "HandRight".
+    """
+
+    bl_idname = "rig_renamer.fix_alias_side"
+    bl_label = "Fix Alias Side"
+    bl_options = {"REGISTER", "UNDO"}
+
+    selected_only: BoolProperty(
+        name="Selected Only",
+        description="Only fix aliases on selected bones",
+        default=False,
+    )
+
+    @classmethod
+    def poll(cls, context):
+        return get_armature_object(context) is not None
+
+    def execute(self, context):
+        arm_obj = get_armature_object(context)
+        if arm_obj is None:
+            self.report({"ERROR"}, "No armature selected")
+            return {"CANCELLED"}
+        foreign = foreign_edit_object(context, arm_obj)
+        if foreign is not None:
+            self.report({"ERROR"}, f"Leave Edit Mode on '{foreign}' first")
+            return {"CANCELLED"}
+
+        prev_mode, edit_names = begin_object_work(arm_obj, context)
+        try:
+            fixed = 0
+            data_bones = arm_obj.data.bones
+            prefer_data = prev_mode != "POSE"
+            for pb in iter_work_bones(arm_obj, self.selected_only, edit_names):
+                alias = get_bone_alias(
+                    pb, data_bones.get(pb.name), prefer_data=prefer_data
+                )
+                if not alias:
+                    continue
+                new_alias = fix_alias_side(pb.name, alias)
+                if not new_alias:
+                    continue
+                set_bone_alias_both(arm_obj, pb.name, new_alias)
+                fixed += 1
+        finally:
+            end_object_work(arm_obj, context, prev_mode)
+
+        if fixed == 0:
+            self.report({"INFO"}, "No conflicting aliases to fix")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"Fixed alias side on {fixed} bone(s)")
+        return {"FINISHED"}
+
+
 class RIGRENAMER_PT_panel(bpy.types.Panel):
     bl_label = "Rig Renamer"
     bl_idname = "RIGRENAMER_PT_panel"
@@ -540,7 +661,6 @@ class RIGRENAMER_PT_panel(bpy.types.Panel):
             text="Toggle Selected Names / Aliases",
         ).selected_only = True
         layout.separator()
-        layout.operator(RIGRENAMER_OT_set_bone_alias.bl_idname, text="Set Alias…")
         layout.operator(
             RIGRENAMER_OT_generate_lr_aliases.bl_idname,
             text="Generate L/R Aliases (All)",
@@ -548,6 +668,14 @@ class RIGRENAMER_PT_panel(bpy.types.Panel):
         layout.operator(
             RIGRENAMER_OT_generate_lr_aliases.bl_idname,
             text="Generate L/R Aliases (Selected)",
+        ).selected_only = True
+        layout.operator(
+            RIGRENAMER_OT_fix_alias_side.bl_idname,
+            text="Fix Alias Sides (All)",
+        ).selected_only = False
+        layout.operator(
+            RIGRENAMER_OT_fix_alias_side.bl_idname,
+            text="Fix Alias Sides (Selected)",
         ).selected_only = True
         row = layout.row()
         row.operator(
@@ -558,37 +686,6 @@ class RIGRENAMER_PT_panel(bpy.types.Panel):
             RIGRENAMER_OT_clear_bone_alias.bl_idname,
             text="Selected",
         ).selected_only = True
-        layout.separator()
-        self._draw_alias_list(context, layout)
-
-    def _draw_alias_list(self, context, layout):
-        """Show stored aliases; works in Object, Pose and Edit Mode."""
-        arm_obj = get_armature_object(context)
-        if arm_obj is None:
-            return
-        if arm_obj.mode == "EDIT":
-            items = [
-                (eb.name, clean_alias(eb.get(ALIAS_PROP)))
-                for eb in arm_obj.data.edit_bones
-            ]
-        else:
-            data_bones = arm_obj.data.bones
-            items = [
-                (pb.name, get_bone_alias(pb, data_bones.get(pb.name)))
-                for pb in arm_obj.pose.bones
-            ]
-        items = [(name, alias) for name, alias in items if alias]
-        box = layout.box()
-        if not items:
-            box.label(text="No aliases yet")
-            return
-        box.label(text=f"Aliases ({len(items)})")
-        for name, alias in items[:50]:
-            row = box.row()
-            row.label(text=name)
-            row.label(text=alias)
-        if len(items) > 50:
-            box.label(text=f"… +{len(items) - 50} more")
 
 
 classes = (
@@ -596,6 +693,7 @@ classes = (
     RIGRENAMER_OT_set_bone_alias,
     RIGRENAMER_OT_clear_bone_alias,
     RIGRENAMER_OT_generate_lr_aliases,
+    RIGRENAMER_OT_fix_alias_side,
     RIGRENAMER_PT_panel,
 )
 

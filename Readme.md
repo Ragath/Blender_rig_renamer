@@ -8,6 +8,7 @@ Toggle bone names with an alias stored in the `alias` custom property. Useful fo
   Each alias must be unique per armature; toggle refuses duplicates instead
   of silently scrambling names.
 - Generate `alias` values from bone names containing Left/Right (`HandLeft` -> `Hand.L` / `Hand_Right` -> `Hand.R`).
+- Fix conflicting sides between bone names and aliases (`Hand.R` with alias `HandLeft` -> `HandRight`).
 - Set or clear the `alias` custom property on all or selected bones.
   The alias is stored on both the pose bone and the armature bone so it is
   visible in the Bone tab's Custom Properties in both Pose Mode and Object Mode.
